@@ -3,6 +3,7 @@ import type { TwitterTweet } from "@/lib/twitter/types";
 
 const COLUMNS: { header: string; key: keyof TwitterTweet; width: number }[] = [
   { header: "Post URL", key: "url", width: 45 },
+  { header: "Tweet Text", key: "text", width: 60 },
   { header: "Post Date", key: "createdAt", width: 22 },
   { header: "Likes", key: "likeCount", width: 12 },
   { header: "Retweets", key: "retweetCount", width: 12 },
@@ -30,6 +31,7 @@ export async function buildTweetsWorkbookBlob(
     sheet.addRow({
       profileHandle: `@${profileHandle}`,
       url: tweet.url,
+      text: tweet.text,
       createdAt: tweet.createdAt,
       likeCount: tweet.likeCount,
       retweetCount: tweet.retweetCount,

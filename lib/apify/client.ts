@@ -21,8 +21,8 @@ const FOLLOWERS_MAX_ITEMS_PER_TARGET = 10;
 const QUOTERS_MAX_ITEMS = 50;
 const REPLIERS_MAX_ITEMS = 100;
 // Latest-tweets is unfiltered/unsorted beyond the actor's own "Latest"
-// ordering: pull up to 1000 tweets, matching the actor's $0.25/1k rate.
-const LATEST_TWEETS_MAX_ITEMS = 1000;
+// ordering: pull up to 1200 tweets, matching the actor's $0.25/1k rate.
+const LATEST_TWEETS_MAX_ITEMS = 1200;
 
 // Hard per-run spend caps (Apify enforces these itself via the
 // `maxTotalChargeUsd` run parameter) as a safety net against runaway cost if
@@ -30,8 +30,8 @@ const LATEST_TWEETS_MAX_ITEMS = 1000;
 const FOLLOWERS_MAX_CHARGE_USD = 0.3;
 const QUOTERS_MAX_CHARGE_USD = 0.05;
 const REPLIERS_MAX_CHARGE_USD = 0.1;
-// 1000 tweets @ $0.00025/tweet = $0.25 expected; capped with headroom.
-const LATEST_TWEETS_MAX_CHARGE_USD = 0.3;
+// 1200 tweets @ $0.00025/tweet = $0.30 expected; capped with headroom.
+const LATEST_TWEETS_MAX_CHARGE_USD = 0.4;
 
 function getApiToken(): string {
   if (!APIFY_API_TOKEN) {
