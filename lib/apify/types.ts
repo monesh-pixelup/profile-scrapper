@@ -21,6 +21,8 @@ export interface RawApifyTweetAuthor {
   profilePicture: string;
   followers: number;
   following: number;
+  // Not present on every account (many leave it blank), so always optional.
+  location?: string;
 }
 
 export interface RawApifyTweet {

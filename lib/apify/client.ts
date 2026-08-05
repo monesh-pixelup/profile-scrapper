@@ -1,4 +1,4 @@
-import type { TwitterTweet, TwitterUser } from "@/lib/twitter/types";
+import type { TweetReplier, TwitterTweet, TwitterUser } from "@/lib/twitter/types";
 import type { RawApifyFollowerRow, RawApifyTweet } from "./types";
 
 const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN;
@@ -95,6 +95,7 @@ function toTwitterUserFromTweetAuthor(raw: RawApifyTweet): TwitterUser | null {
     profilePicture: raw.author.profilePicture,
     followers: raw.author.followers,
     following: raw.author.following,
+    location: raw.author.location,
   };
 }
 
@@ -131,11 +132,29 @@ export async function fetchTweetQuoters(tweetId: string): Promise<TwitterUser[]>
   return tweets.map(toTwitterUserFromTweetAuthor).filter((user): user is TwitterUser => user !== null);
 }
 
+export interface TweetRepliersResult {
+  repliers: TweetReplier[];
+  rawCount: number;
+}
+
+function toTweetReplier(raw: RawApifyTweet): TweetReplier {
+  return {
+    replyId: raw.id,
+    replyUrl: raw.url,
+    replyText: raw.text,
+    // The actor occasionally returns malformed stub tweets with an empty
+    // `author: {}` (no fields at all) — keep the reply itself (it still
+    // has an id/url/text) and just leave `user` null rather than dropping
+    // the whole entry.
+    user: toTwitterUserFromTweetAuthor(raw),
+  };
+}
+
 // Accounts that replied within the tweet's conversation thread.
 // Note: there is no way to fetch a tweet's retweeters via this actor (it's
 // a search-based scraper, and X's search product doesn't expose that data
 // the way it exposes quotes/replies), so retweeters are not included here.
-export async function fetchTweetRepliers(tweetId: string): Promise<TwitterUser[]> {
+export async function fetchTweetRepliers(tweetId: string): Promise<TweetRepliersResult> {
   const tweets = await runActorSync<RawApifyTweet>(
     TWEET_SCRAPER_ACTOR_ID,
     {
@@ -147,7 +166,7 @@ export async function fetchTweetRepliers(tweetId: string): Promise<TwitterUser[]
     REPLIERS_MAX_CHARGE_USD
   );
 
-  return tweets.map(toTwitterUserFromTweetAuthor).filter((user): user is TwitterUser => user !== null);
+  return { repliers: tweets.map(toTweetReplier), rawCount: tweets.length };
 }
 
 function toTwitterTweet(raw: RawApifyTweet): TwitterTweet | null {
