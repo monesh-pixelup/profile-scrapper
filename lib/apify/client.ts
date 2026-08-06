@@ -24,9 +24,12 @@ const FOLLOWER_SCRAPER_ACTOR_ID =
 // pulls as many results as $1 buys rather than an arbitrary fixed count.
 const QUOTERS_MAX_ITEMS = 50;
 const REPLIERS_MAX_ITEMS = 100;
-// Latest-tweets is unfiltered/unsorted beyond the actor's own "Latest"
-// ordering: pull up to 1200 tweets, matching the actor's $0.25/1k rate.
-const LATEST_TWEETS_MAX_ITEMS = 1200;
+// Default when the caller doesn't ask for a specific count — not a hard
+// cap; fetchLatestTweets accepts any maxItems the caller passes.
+export const LATEST_TWEETS_MAX_ITEMS = 1200;
+// Actor's per-tweet rate, used to scale the spend cap below to whatever
+// count is actually requested instead of a single fixed dollar figure.
+const TWEET_RATE_USD_PER_ITEM = 0.00025;
 
 // Hard per-run spend caps (Apify enforces these itself via the
 // `maxTotalChargeUsd` run parameter) as a safety net against runaway cost if
@@ -35,8 +38,10 @@ const LATEST_TWEETS_MAX_ITEMS = 1200;
 const FOLLOWERS_MAX_CHARGE_USD = 1;
 const QUOTERS_MAX_CHARGE_USD = 0.05;
 const REPLIERS_MAX_CHARGE_USD = 0.1;
-// 1200 tweets @ $0.00025/tweet = $0.30 expected; capped with headroom.
-const LATEST_TWEETS_MAX_CHARGE_USD = 0.4;
+// Floor for the latest-tweets spend cap (covers the default 1200-tweet
+// case with headroom); fetchLatestTweets scales this up for larger
+// requested counts instead of leaving a fixed cap that would truncate them.
+const LATEST_TWEETS_MIN_CHARGE_USD = 0.4;
 
 function getApiToken(): string {
   if (!APIFY_API_TOKEN) {
@@ -219,11 +224,16 @@ function toTwitterTweet(raw: RawApifyTweet): TwitterTweet | null {
 
 // Latest tweets posted by the account, newest first — no type filter (posts,
 // replies, quotes, and retweets are all included) and no result cap beyond
-// maxItems itself; every tweet the actor returns is shown.
+// maxItems itself; every tweet the actor returns is shown. `maxItems` is
+// caller-supplied (e.g. from a UI field) rather than a fixed constant; the
+// spend cap scales with it (with headroom) so a larger request isn't
+// silently truncated by a cap sized for the default count.
 export async function fetchLatestTweets(
   username: string,
   maxItems: number = LATEST_TWEETS_MAX_ITEMS
 ): Promise<TwitterTweet[]> {
+  const chargeCap = Math.max(LATEST_TWEETS_MIN_CHARGE_USD, maxItems * TWEET_RATE_USD_PER_ITEM * 1.2);
+
   const tweets = await runActorSync<RawApifyTweet>(
     TWEET_SCRAPER_ACTOR_ID,
     {
@@ -232,7 +242,7 @@ export async function fetchLatestTweets(
       queryType: "Latest",
       "include:nativeretweets": true,
     },
-    LATEST_TWEETS_MAX_CHARGE_USD
+    chargeCap
   );
 
   return tweets.map(toTwitterTweet).filter((tweet): tweet is TwitterTweet => tweet !== null);

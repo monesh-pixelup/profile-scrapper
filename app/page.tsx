@@ -6,6 +6,12 @@ import { parseTwitterUrl, type TwitterUrlTarget } from "@/lib/twitter/parseUrl";
 import { buildTweetsWorkbookBlob } from "@/lib/export/tweetsWorkbook";
 import { scoreProfile } from "@/lib/icp/score";
 
+// Mirrors LATEST_TWEETS_MAX_ITEMS in lib/apify/client.ts (the server-side
+// default used when the field below is left blank) — kept as a plain
+// constant here rather than importing that module, since it pulls in
+// server-only Apify client code that has no business in the client bundle.
+const DEFAULT_TWEETS_LIMIT = 1200;
+
 type Status = "idle" | "loading" | "error";
 type Tab = "tweets" | "following" | "followers";
 
@@ -31,6 +37,7 @@ function formatDate(raw: string): string {
 
 export default function Home() {
   const [url, setUrl] = useState("");
+  const [tweetsLimitInput, setTweetsLimitInput] = useState("");
   const [source, setSource] = useState<TwitterUrlTarget | null>(null);
 
   const [sendStatus, setSendStatus] = useState<Status>("idle");
@@ -65,7 +72,7 @@ export default function Home() {
   // covers both tabs — switching between them never refetches.
   const connectionsFetchedForRef = useRef<string | null>(null);
 
-  const fetchTweets = async (forUrl: string) => {
+  const fetchTweets = async (forUrl: string, maxItems?: number) => {
     if (tweetsFetchedForRef.current === forUrl) return;
     tweetsFetchedForRef.current = forUrl;
 
@@ -76,7 +83,7 @@ export default function Home() {
       const res = await fetch("/api/tweets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: forUrl }),
+        body: JSON.stringify({ url: forUrl, ...(maxItems !== undefined ? { maxItems } : {}) }),
       });
 
       const data = await res.json();
@@ -128,9 +135,22 @@ export default function Home() {
       return;
     }
 
+    const trimmedLimit = tweetsLimitInput.trim();
+    let maxItems: number | undefined;
+    if (trimmedLimit) {
+      const parsed = Number(trimmedLimit);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        setSubmitError("Tweets to fetch must be a positive whole number");
+        setSendStatus("error");
+        isSubmittingRef.current = false;
+        return;
+      }
+      maxItems = parsed;
+    }
+
     setSource(target);
     setSendStatus("idle");
-    await fetchTweets(trimmed);
+    await fetchTweets(trimmed, maxItems);
 
     isSubmittingRef.current = false;
   };
@@ -272,6 +292,22 @@ export default function Home() {
             </svg>
           )}
         </button>
+      </div>
+
+      <div className="mt-3 flex w-full max-w-2xl items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+        <label htmlFor="tweetsLimit">Tweets to fetch:</label>
+        <input
+          id="tweetsLimit"
+          type="number"
+          min={1}
+          step={1}
+          value={tweetsLimitInput}
+          onChange={(e) => setTweetsLimitInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={String(DEFAULT_TWEETS_LIMIT)}
+          className="w-28 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-zinc-800 outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+        />
+        <span className="text-xs text-zinc-400">Leave blank for the default ({DEFAULT_TWEETS_LIMIT}).</span>
       </div>
 
       {submitError && <p className="mt-4 max-w-2xl text-sm text-red-500">{submitError}</p>}

@@ -3,7 +3,7 @@ import { parseTwitterUrl } from "@/lib/twitter/parseUrl";
 import { fetchLatestTweets } from "@/lib/apify/client";
 
 export async function POST(request: Request) {
-  let body: { url?: string };
+  let body: { url?: string; maxItems?: number };
   try {
     body = await request.json();
   } catch {
@@ -13,6 +13,17 @@ export async function POST(request: Request) {
   const rawUrl = body.url?.trim();
   if (!rawUrl) {
     return NextResponse.json({ error: "Missing 'url' in request body" }, { status: 400 });
+  }
+
+  let maxItems: number | undefined;
+  if (body.maxItems !== undefined) {
+    if (!Number.isInteger(body.maxItems) || body.maxItems < 1) {
+      return NextResponse.json(
+        { error: "'maxItems' must be a positive whole number" },
+        { status: 400 }
+      );
+    }
+    maxItems = body.maxItems;
   }
 
   const target = parseTwitterUrl(rawUrl);
@@ -31,7 +42,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const tweets = await fetchLatestTweets(target.username);
+    const tweets = await fetchLatestTweets(target.username, maxItems);
     return NextResponse.json({ source: target, tweets });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error while fetching tweets";
