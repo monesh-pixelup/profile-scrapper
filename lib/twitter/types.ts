@@ -32,3 +32,9 @@ export interface TweetReplier {
   replyText: string;
   user: TwitterUser | null;
 }
+
+// A follower/following entry for a profile — same shape as TwitterUser plus
+// which side of the relationship it came from.
+export interface TwitterConnection extends TwitterUser {
+  relation: "followers" | "following";
+}

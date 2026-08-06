@@ -1,4 +1,4 @@
-import type { TweetReplier, TwitterTweet, TwitterUser } from "@/lib/twitter/types";
+import type { TweetReplier, TwitterConnection, TwitterTweet, TwitterUser } from "@/lib/twitter/types";
 import type { RawApifyFollowerRow, RawApifyTweet } from "./types";
 
 const APIFY_API_TOKEN = process.env.APIFY_API_TOKEN;
@@ -17,7 +17,11 @@ const FOLLOWER_SCRAPER_ACTOR_ID =
 // a 200-item run (100 followers + 100 following) cost exactly $2.00. The
 // tweet-scraper actor has no such tier markup ($0.00025/tweet on every
 // tier), so its caps stay comparatively generous.
-const FOLLOWERS_MAX_ITEMS_PER_TARGET = 10;
+//
+// Followers/following has no maxItemsPerTarget of its own — instead of
+// capping the item count, the run is left open and FOLLOWERS_MAX_CHARGE_USD
+// (the $1 hard spend cap Apify enforces below) is what stops it, so it
+// pulls as many results as $1 buys rather than an arbitrary fixed count.
 const QUOTERS_MAX_ITEMS = 50;
 const REPLIERS_MAX_ITEMS = 100;
 // Latest-tweets is unfiltered/unsorted beyond the actor's own "Latest"
@@ -27,7 +31,8 @@ const LATEST_TWEETS_MAX_ITEMS = 1200;
 // Hard per-run spend caps (Apify enforces these itself via the
 // `maxTotalChargeUsd` run parameter) as a safety net against runaway cost if
 // an actor ever ignores our maxItems input or a pricing tier changes again.
-const FOLLOWERS_MAX_CHARGE_USD = 0.3;
+// Followers/following combined (both relations, one run) is capped at $1.
+const FOLLOWERS_MAX_CHARGE_USD = 1;
 const QUOTERS_MAX_CHARGE_USD = 0.05;
 const REPLIERS_MAX_CHARGE_USD = 0.1;
 // 1200 tweets @ $0.00025/tweet = $0.30 expected; capped with headroom.
@@ -83,6 +88,15 @@ function toTwitterUserFromFollowerRow(raw: RawApifyFollowerRow): TwitterUser | n
   };
 }
 
+// Same as toTwitterUserFromFollowerRow, but keeps `sourceRelation` (which
+// side of the relationship this row came from) so a single combined
+// followers+following run can be split back into two lists.
+function toConnectionFromFollowerRow(raw: RawApifyFollowerRow): TwitterConnection | null {
+  const user = toTwitterUserFromFollowerRow(raw);
+  if (!user || !raw.sourceRelation) return null;
+  return { ...user, relation: raw.sourceRelation };
+}
+
 function toTwitterUserFromTweetAuthor(raw: RawApifyTweet): TwitterUser | null {
   // The actor occasionally returns malformed stub tweets with an empty
   // `author: {}` (no fields at all); skip those rather than surfacing a
@@ -108,13 +122,29 @@ export async function fetchProfileConnections(username: string): Promise<Twitter
     {
       twitterHandles: [username],
       relations: ["followers", "following"],
-      maxItemsPerTarget: FOLLOWERS_MAX_ITEMS_PER_TARGET,
       outputMode: "compact",
     },
     FOLLOWERS_MAX_CHARGE_USD
   );
 
   return rows.map(toTwitterUserFromFollowerRow).filter((user): user is TwitterUser => user !== null);
+}
+
+// Same underlying actor run as fetchProfileConnections, but keeps each row
+// tagged with which relation ("followers" vs "following") it came from, so
+// callers can split one combined run into both lists without a second call.
+export async function fetchProfileConnectionsSplit(username: string): Promise<TwitterConnection[]> {
+  const rows = await runActorSync<RawApifyFollowerRow>(
+    FOLLOWER_SCRAPER_ACTOR_ID,
+    {
+      twitterHandles: [username],
+      relations: ["followers", "following"],
+      outputMode: "compact",
+    },
+    FOLLOWERS_MAX_CHARGE_USD
+  );
+
+  return rows.map(toConnectionFromFollowerRow).filter((c): c is TwitterConnection => c !== null);
 }
 
 // Accounts that quote-tweeted the given tweet.

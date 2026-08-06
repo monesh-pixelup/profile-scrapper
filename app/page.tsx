@@ -1,14 +1,21 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import type { TweetReplier, TwitterTweet } from "@/lib/twitter/types";
+import type { TweetReplier, TwitterConnection, TwitterTweet } from "@/lib/twitter/types";
 import { parseTwitterUrl, type TwitterUrlTarget } from "@/lib/twitter/parseUrl";
 import { buildTweetsWorkbookBlob } from "@/lib/export/tweetsWorkbook";
 import { scoreProfile } from "@/lib/icp/score";
 
 type Status = "idle" | "loading" | "error";
+type Tab = "tweets" | "following" | "followers";
 
 const PAGE_SIZE = 25;
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "tweets", label: "Latest Tweets" },
+  { key: "following", label: "Following" },
+  { key: "followers", label: "Followers" },
+];
 
 function formatCount(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
@@ -35,6 +42,13 @@ export default function Home() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
+  const [activeTab, setActiveTab] = useState<Tab>("tweets");
+  const [following, setFollowing] = useState<TwitterConnection[]>([]);
+  const [followers, setFollowers] = useState<TwitterConnection[]>([]);
+  const [connectionsStatus, setConnectionsStatus] = useState<Status>("idle");
+  const [connectionsError, setConnectionsError] = useState<string | null>(null);
+  const [connectionsPage, setConnectionsPage] = useState(1);
+
   const [selectedTweet, setSelectedTweet] = useState<TwitterTweet | null>(null);
   const [repliersByTweet, setRepliersByTweet] = useState<Record<string, TweetReplier[]>>({});
   const [repliersRawCountByTweet, setRepliersRawCountByTweet] = useState<Record<string, number>>({});
@@ -47,6 +61,9 @@ export default function Home() {
   const isSubmittingRef = useRef(false);
   const tweetsFetchedForRef = useRef<string | null>(null);
   const repliersFetchedForRef = useRef<Set<string>>(new Set());
+  // One combined call returns both followers and following, so this guard
+  // covers both tabs — switching between them never refetches.
+  const connectionsFetchedForRef = useRef<string | null>(null);
 
   const fetchTweets = async (forUrl: string) => {
     if (tweetsFetchedForRef.current === forUrl) return;
@@ -92,6 +109,17 @@ export default function Home() {
     setCurrentPage(1);
     tweetsFetchedForRef.current = null;
 
+    // New profile: default back to the Tweets tab and drop any
+    // previously-fetched followers/following so the next tab switch fetches
+    // fresh data for this URL.
+    setActiveTab("tweets");
+    setFollowing([]);
+    setFollowers([]);
+    setConnectionsStatus("idle");
+    setConnectionsError(null);
+    setConnectionsPage(1);
+    connectionsFetchedForRef.current = null;
+
     const target = parseTwitterUrl(trimmed);
     if (!target) {
       setSubmitError("Could not extract a profile username or a tweet ID from that URL");
@@ -109,6 +137,44 @@ export default function Home() {
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") handleSend();
+  };
+
+  const fetchConnections = async (forUrl: string) => {
+    if (connectionsFetchedForRef.current === forUrl) return;
+    connectionsFetchedForRef.current = forUrl;
+
+    setConnectionsStatus("loading");
+    setConnectionsError(null);
+
+    try {
+      const res = await fetch("/api/profiles/connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: forUrl }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Something went wrong");
+      }
+
+      setFollowing(data.following ?? []);
+      setFollowers(data.followers ?? []);
+      setConnectionsStatus("idle");
+      setConnectionsPage(1);
+    } catch (err) {
+      setConnectionsError(err instanceof Error ? err.message : "Something went wrong");
+      setConnectionsStatus("error");
+      connectionsFetchedForRef.current = null;
+    }
+  };
+
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    if ((tab === "following" || tab === "followers") && source) {
+      fetchConnections(source.type === "profile" ? source.username : url.trim());
+    }
   };
 
   const fetchRepliers = async (tweetId: string) => {
@@ -212,39 +278,86 @@ export default function Home() {
 
       {source && (
         <div className="mt-8 w-full max-w-6xl">
-          {tweetsStatus === "loading" && (
-            <p className="text-center text-sm text-zinc-400">Loading latest tweets…</p>
-          )}
+          <div className="mb-6 flex justify-center gap-1 rounded-full border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
+            {TABS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handleTabChange(key)}
+                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === key
+                    ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-          {tweetsError && <p className="text-sm text-red-500">{tweetsError}</p>}
-
-          {tweetsStatus === "idle" && tweets.length > 0 && (
+          {activeTab === "tweets" && (
             <>
-              <div className="mb-3 flex justify-end">
-                <button
-                  onClick={handleDownloadTweets}
-                  disabled={isDownloading}
-                  className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-white"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
-                  </svg>
-                  {isDownloading ? "Preparing…" : "Download .xlsx"}
-                </button>
-              </div>
+              {tweetsStatus === "loading" && (
+                <p className="text-center text-sm text-zinc-400">Loading latest tweets…</p>
+              )}
 
-              <TweetsTable
-                tweets={tweets}
-                username={source?.type === "profile" ? source.username : undefined}
-                currentPage={currentPage}
-                onPageChange={setCurrentPage}
-                onTweetClick={handleTweetClick}
-              />
+              {tweetsError && <p className="text-sm text-red-500">{tweetsError}</p>}
+
+              {tweetsStatus === "idle" && tweets.length > 0 && (
+                <>
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      onClick={handleDownloadTweets}
+                      disabled={isDownloading}
+                      className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-white"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                      </svg>
+                      {isDownloading ? "Preparing…" : "Download .xlsx"}
+                    </button>
+                  </div>
+
+                  <TweetsTable
+                    tweets={tweets}
+                    username={source?.type === "profile" ? source.username : undefined}
+                    currentPage={currentPage}
+                    onPageChange={setCurrentPage}
+                    onTweetClick={handleTweetClick}
+                  />
+                </>
+              )}
+
+              {tweetsStatus === "idle" && tweets.length === 0 && !tweetsError && (
+                <p className="text-center text-sm text-zinc-400">No tweets found.</p>
+              )}
             </>
           )}
 
-          {tweetsStatus === "idle" && tweets.length === 0 && !tweetsError && (
-            <p className="text-center text-sm text-zinc-400">No tweets found.</p>
+          {(activeTab === "following" || activeTab === "followers") && (
+            <>
+              {connectionsStatus === "loading" && (
+                <p className="text-center text-sm text-zinc-400">
+                  Loading {activeTab}…
+                </p>
+              )}
+
+              {connectionsError && <p className="text-sm text-red-500">{connectionsError}</p>}
+
+              {connectionsStatus === "idle" &&
+                (() => {
+                  const list = activeTab === "following" ? following : followers;
+                  if (list.length === 0) {
+                    return <p className="text-center text-sm text-zinc-400">No {activeTab} found.</p>;
+                  }
+                  return (
+                    <ConnectionsTable
+                      profiles={list}
+                      currentPage={connectionsPage}
+                      onPageChange={setConnectionsPage}
+                    />
+                  );
+                })()}
+            </>
           )}
         </div>
       )}
@@ -633,6 +746,195 @@ function TweetsTable({
         <div className="mt-4 flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
           <span>
             Page {safePage} of {totalPages} ({sortedTweets.length} tweets)
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onPageChange(Math.max(1, safePage - 1))}
+              disabled={safePage <= 1}
+              className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-white"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
+              disabled={safePage >= totalPages}
+              className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-white"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type ConnectionSortField = "icpScore" | "followers" | "following";
+
+const CONNECTION_SORTABLE_COLUMNS: { field: ConnectionSortField; label: string }[] = [
+  { field: "icpScore", label: "ICP Score" },
+  { field: "followers", label: "Followers" },
+  { field: "following", label: "Following" },
+];
+
+function ConnectionsTable({
+  profiles,
+  currentPage,
+  onPageChange,
+}: {
+  profiles: TwitterConnection[];
+  currentPage: number;
+  onPageChange: (page: number) => void;
+}) {
+  const [minIcpScore, setMinIcpScore] = useState("");
+  const [sortField, setSortField] = useState<ConnectionSortField | null>("icpScore");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  // Scored once per render off the raw list — these lists are small (tens of
+  // profiles per relation), so no memoization is needed.
+  const scored = profiles.map((profile) => ({ profile, icp: scoreProfile(profile) }));
+
+  const minIcpScoreNum = toNumberOrUndefined(minIcpScore);
+  const filtered = scored.filter(({ icp }) => minIcpScoreNum === undefined || icp.score >= minIcpScoreNum);
+
+  const sorted = sortField
+    ? [...filtered].sort((a, b) => {
+        const av = sortField === "icpScore" ? a.icp.score : a.profile[sortField];
+        const bv = sortField === "icpScore" ? b.icp.score : b.profile[sortField];
+        return sortDirection === "asc" ? av - bv : bv - av;
+      })
+    : filtered;
+
+  const handleSort = (field: ConnectionSortField) => {
+    if (sortField === field) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("desc");
+    }
+    onPageChange(1);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageItems = sorted.slice(start, start + PAGE_SIZE);
+
+  return (
+    <div className="w-full">
+      <div className="mb-3 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Min ICP score</label>
+          <input
+            type="number"
+            value={minIcpScore}
+            onChange={(e) => {
+              setMinIcpScore(e.target.value);
+              onPageChange(1);
+            }}
+            placeholder="0"
+            className="w-24 rounded-lg border border-zinc-200 bg-transparent px-2 py-1 text-zinc-800 outline-none dark:border-zinc-700 dark:text-zinc-100"
+          />
+        </div>
+        {minIcpScore && (
+          <button
+            onClick={() => {
+              setMinIcpScore("");
+              onPageChange(1);
+            }}
+            className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-white"
+          >
+            Clear filter
+          </button>
+        )}
+        <span className="ml-auto text-xs text-zinc-400">
+          {sorted.length} of {profiles.length} profiles
+        </span>
+      </div>
+
+      <div className="w-full overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full min-w-225 border-collapse text-left text-sm">
+          <thead>
+            <tr className="border-b border-zinc-200 bg-zinc-100 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+              <th className="px-3 py-2 font-medium">Profile</th>
+              <th className="px-3 py-2 font-medium">Bio</th>
+              {CONNECTION_SORTABLE_COLUMNS.map(({ field, label }) => (
+                <th key={field} className="px-3 py-2 font-medium">
+                  <button
+                    onClick={() => handleSort(field)}
+                    className="flex items-center gap-1 uppercase tracking-wide text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                  >
+                    {label}
+                    <span className="text-[0.6rem] leading-none">
+                      {sortField === field ? (sortDirection === "asc" ? "▲" : "▼") : "⇅"}
+                    </span>
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.map(({ profile, icp }) => (
+              <tr
+                key={profile.userName}
+                className="border-b border-zinc-100 bg-white last:border-0 hover:bg-zinc-50 dark:border-zinc-900 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+              >
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    {profile.profilePicture ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={profile.profilePicture}
+                        alt={profile.userName}
+                        className="h-8 w-8 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-8 w-8 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                    )}
+                    <div className="min-w-0">
+                      <a
+                        href={`https://x.com/${profile.userName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block truncate text-sm font-medium text-zinc-800 hover:underline dark:text-zinc-100"
+                      >
+                        {profile.name || profile.userName}
+                      </a>
+                      <span className="text-xs text-zinc-400">@{profile.userName}</span>
+                    </div>
+                  </div>
+                </td>
+                <td className="max-w-xs min-w-48 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span className="line-clamp-2">{profile.description || "—"}</span>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <span
+                    title={icp.signals.length > 0 ? icp.signals.join(", ") : "No ICP signals matched"}
+                    className="rounded-full bg-zinc-100 px-2 py-0.5 text-[0.65rem] font-medium whitespace-nowrap text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                  >
+                    {icp.tag} · {icp.score}
+                  </span>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-zinc-600 dark:text-zinc-300">
+                  {formatCount(profile.followers)}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-zinc-600 dark:text-zinc-300">
+                  {formatCount(profile.following)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {sorted.length === 0 && (
+        <p className="mt-4 text-center text-sm text-zinc-400">No profiles match the current filters.</p>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
+          <span>
+            Page {safePage} of {totalPages} ({sorted.length} profiles)
           </span>
           <div className="flex gap-2">
             <button
