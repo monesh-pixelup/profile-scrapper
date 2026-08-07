@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import type { TweetReplier, TwitterConnection, TwitterTweet } from "@/lib/twitter/types";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import type { TweetReplier, TwitterConnection, TwitterTweet, TwitterUser } from "@/lib/twitter/types";
 import { parseTwitterUrl, type TwitterUrlTarget } from "@/lib/twitter/parseUrl";
 import { buildTweetsWorkbookBlob } from "@/lib/export/tweetsWorkbook";
 import { scoreProfile } from "@/lib/icp/score";
@@ -13,7 +13,7 @@ import { scoreProfile } from "@/lib/icp/score";
 const DEFAULT_TWEETS_LIMIT = 1200;
 
 type Status = "idle" | "loading" | "error";
-type Tab = "tweets" | "following" | "followers";
+type Tab = "tweets" | "following" | "followers" | "topIcp";
 
 const PAGE_SIZE = 25;
 
@@ -21,6 +21,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "tweets", label: "Latest Tweets" },
   { key: "following", label: "Following" },
   { key: "followers", label: "Followers" },
+  { key: "topIcp", label: "Top ICP" },
 ];
 
 function formatCount(count: number): string {
@@ -61,6 +62,8 @@ export default function Home() {
   const [repliersRawCountByTweet, setRepliersRawCountByTweet] = useState<Record<string, number>>({});
   const [repliersStatus, setRepliersStatus] = useState<Record<string, Status>>({});
   const [repliersError, setRepliersError] = useState<Record<string, string>>({});
+
+  const [topIcpPage, setTopIcpPage] = useState(1);
 
   // Refs (not state) so the "already fetching / already fetched" checks are
   // synchronous — state updates land on the next render, which leaves a gap
@@ -239,6 +242,29 @@ export default function Home() {
     fetchRepliers(tweet.id);
   };
 
+  // The single tweet with the most comments among the already-fetched
+  // latest tweets — the Top ICP tab scrapes commenters for this one tweet
+  // rather than re-fetching anything of its own.
+  const topTweetByComments = useMemo(() => {
+    if (tweets.length === 0) return null;
+    return [...tweets].sort((a, b) => b.replyCount - a.replyCount)[0];
+  }, [tweets]);
+
+  // New profile fetched -> new top tweet -> start its ranking view on page 1.
+  useEffect(() => {
+    setTopIcpPage(1);
+  }, [topTweetByComments?.id]);
+
+  // Scrape commenters for the top-by-comments tweet exactly once, and only
+  // once the user actually opens the Top ICP tab — fetchRepliers' own ref
+  // guard makes this safe to re-run on every render without duplicating the
+  // (paid) request.
+  useEffect(() => {
+    if (activeTab === "topIcp" && topTweetByComments) {
+      fetchRepliers(topTweetByComments.id);
+    }
+  }, [activeTab, topTweetByComments]);
+
   const handleDownloadTweets = async () => {
     if (isDownloading || tweets.length === 0 || source?.type !== "profile") return;
     setIsDownloading(true);
@@ -391,6 +417,67 @@ export default function Home() {
                       currentPage={connectionsPage}
                       onPageChange={setConnectionsPage}
                     />
+                  );
+                })()}
+            </>
+          )}
+
+          {activeTab === "topIcp" && (
+            <>
+              {tweetsStatus === "loading" && (
+                <p className="text-center text-sm text-zinc-400">Waiting for latest tweets to finish loading…</p>
+              )}
+
+              {tweetsStatus === "idle" && !topTweetByComments && (
+                <p className="text-center text-sm text-zinc-400">
+                  No tweets found to determine top ICP profiles.
+                </p>
+              )}
+
+              {topTweetByComments &&
+                (() => {
+                  const tweetId = topTweetByComments.id;
+                  const status = repliersStatus[tweetId] ?? "loading";
+                  const error = repliersError[tweetId] ?? null;
+                  const repliers = repliersByTweet[tweetId] ?? [];
+                  const rawCount = repliersRawCountByTweet[tweetId] ?? null;
+
+                  return (
+                    <>
+                      <div className="mb-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                          Top tweet by comments ({formatCount(topTweetByComments.replyCount)} comments) — ICP
+                          scores below are for the profiles that commented on it.
+                        </p>
+                        <a
+                          href={topTweetByComments.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 block truncate text-zinc-800 hover:underline dark:text-zinc-100"
+                        >
+                          {topTweetByComments.text || topTweetByComments.url}
+                        </a>
+                      </div>
+
+                      {status === "loading" && (
+                        <p className="text-center text-sm text-zinc-400">Scraping commenters…</p>
+                      )}
+
+                      {status === "error" && <p className="text-sm text-red-500">{error}</p>}
+
+                      {status === "idle" && repliers.filter((r) => r.user !== null).length === 0 && (
+                        <p className="text-center text-sm text-zinc-400">No commenters found for this tweet.</p>
+                      )}
+
+                      {status === "idle" && repliers.filter((r) => r.user !== null).length > 0 && (
+                        <TopIcpTable
+                          repliers={repliers}
+                          rawCount={rawCount}
+                          currentPage={topIcpPage}
+                          onPageChange={setTopIcpPage}
+                        />
+                      )}
+                    </>
                   );
                 })()}
             </>
@@ -971,6 +1058,141 @@ function ConnectionsTable({
         <div className="mt-4 flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
           <span>
             Page {safePage} of {totalPages} ({sorted.length} profiles)
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onPageChange(Math.max(1, safePage - 1))}
+              disabled={safePage <= 1}
+              className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-white"
+            >
+              Previous
+            </button>
+            <button
+              onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
+              disabled={safePage >= totalPages}
+              className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-white"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TopIcpTable({
+  repliers,
+  rawCount,
+  currentPage,
+  onPageChange,
+}: {
+  repliers: TweetReplier[];
+  rawCount: number | null;
+  currentPage: number;
+  onPageChange: (page: number) => void;
+}) {
+  const scored = repliers
+    .filter((replier): replier is TweetReplier & { user: TwitterUser } => replier.user !== null)
+    .map((replier) => ({ replier, user: replier.user, icp: scoreProfile(replier.user) }))
+    .sort((a, b) => b.icp.score - a.icp.score);
+
+  const totalPages = Math.max(1, Math.ceil(scored.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageItems = scored.slice(start, start + PAGE_SIZE);
+
+  return (
+    <div className="w-full">
+      <div className="mb-3 flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
+        <span>Ranked by ICP score, highest first.</span>
+        <span>
+          {rawCount !== null
+            ? `${rawCount} commenter${rawCount === 1 ? "" : "s"} found, ${scored.length} with usable profile data.`
+            : `${scored.length} profiles scored.`}
+        </span>
+      </div>
+
+      <div className="w-full overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full min-w-225 border-collapse text-left text-sm">
+          <thead>
+            <tr className="border-b border-zinc-200 bg-zinc-100 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+              <th className="px-3 py-2 font-medium">Profile</th>
+              <th className="px-3 py-2 font-medium">Bio</th>
+              <th className="px-3 py-2 font-medium">ICP Score</th>
+              <th className="px-3 py-2 font-medium">Followers</th>
+              <th className="px-3 py-2 font-medium">Comment</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.map(({ replier, user, icp }) => (
+              <tr
+                key={replier.replyId}
+                className="border-b border-zinc-100 bg-white last:border-0 hover:bg-zinc-50 dark:border-zinc-900 dark:bg-zinc-950 dark:hover:bg-zinc-900"
+              >
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    {user.profilePicture ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={user.profilePicture}
+                        alt={user.userName}
+                        className="h-8 w-8 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-8 w-8 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                    )}
+                    <div className="min-w-0">
+                      <a
+                        href={`https://x.com/${user.userName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block truncate text-sm font-medium text-zinc-800 hover:underline dark:text-zinc-100"
+                      >
+                        {user.name || user.userName}
+                      </a>
+                      <span className="text-xs text-zinc-400">@{user.userName}</span>
+                    </div>
+                  </div>
+                </td>
+                <td className="max-w-xs min-w-48 px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span className="line-clamp-2">{user.description || "—"}</span>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <span
+                    title={icp.signals.length > 0 ? icp.signals.join(", ") : "No ICP signals matched"}
+                    className="rounded-full bg-zinc-100 px-2 py-0.5 text-[0.65rem] font-medium whitespace-nowrap text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                  >
+                    {icp.tag} · {icp.score}
+                  </span>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap text-zinc-600 dark:text-zinc-300">
+                  {formatCount(user.followers)}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {replier.replyUrl ? (
+                    <a
+                      href={replier.replyUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      View comment
+                    </a>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
+          <span>
+            Page {safePage} of {totalPages} ({scored.length} profiles)
           </span>
           <div className="flex gap-2">
             <button
