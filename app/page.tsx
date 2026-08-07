@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import type { TweetReplier, TwitterConnection, TwitterTweet, TwitterUser } from "@/lib/twitter/types";
 import { parseTwitterUrl, type TwitterUrlTarget } from "@/lib/twitter/parseUrl";
 import { buildTweetsWorkbookBlob } from "@/lib/export/tweetsWorkbook";
@@ -64,6 +64,12 @@ export default function Home() {
   const [repliersError, setRepliersError] = useState<Record<string, string>>({});
 
   const [topIcpPage, setTopIcpPage] = useState(1);
+  const [topIcpRepliers, setTopIcpRepliers] = useState<TweetReplier[]>([]);
+  const [topIcpRawCount, setTopIcpRawCount] = useState<number | null>(null);
+  const [topIcpTweetsScraped, setTopIcpTweetsScraped] = useState<number | null>(null);
+  const [topIcpTweetsSkipped, setTopIcpTweetsSkipped] = useState<number | null>(null);
+  const [topIcpStatus, setTopIcpStatus] = useState<Status>("idle");
+  const [topIcpError, setTopIcpError] = useState<string | null>(null);
 
   // Refs (not state) so the "already fetching / already fetched" checks are
   // synchronous — state updates land on the next render, which leaves a gap
@@ -74,6 +80,8 @@ export default function Home() {
   // One combined call returns both followers and following, so this guard
   // covers both tabs — switching between them never refetches.
   const connectionsFetchedForRef = useRef<string | null>(null);
+  // Keyed by URL, same pattern as tweetsFetchedForRef/connectionsFetchedForRef.
+  const topIcpFetchedForRef = useRef<string | null>(null);
 
   const fetchTweets = async (forUrl: string, maxItems?: number) => {
     if (tweetsFetchedForRef.current === forUrl) return;
@@ -129,6 +137,15 @@ export default function Home() {
     setConnectionsError(null);
     setConnectionsPage(1);
     connectionsFetchedForRef.current = null;
+
+    setTopIcpRepliers([]);
+    setTopIcpRawCount(null);
+    setTopIcpTweetsScraped(null);
+    setTopIcpTweetsSkipped(null);
+    setTopIcpStatus("idle");
+    setTopIcpError(null);
+    setTopIcpPage(1);
+    topIcpFetchedForRef.current = null;
 
     const target = parseTwitterUrl(trimmed);
     if (!target) {
@@ -242,28 +259,55 @@ export default function Home() {
     fetchRepliers(tweet.id);
   };
 
-  // The single tweet with the most comments among the already-fetched
-  // latest tweets — the Top ICP tab scrapes commenters for this one tweet
-  // rather than re-fetching anything of its own.
-  const topTweetByComments = useMemo(() => {
-    if (tweets.length === 0) return null;
-    return [...tweets].sort((a, b) => b.replyCount - a.replyCount)[0];
-  }, [tweets]);
+  const fetchTopIcp = async (forUrl: string) => {
+    if (topIcpFetchedForRef.current === forUrl) return;
+    topIcpFetchedForRef.current = forUrl;
 
-  // New profile fetched -> new top tweet -> start its ranking view on page 1.
-  useEffect(() => {
-    setTopIcpPage(1);
-  }, [topTweetByComments?.id]);
+    setTopIcpStatus("loading");
+    setTopIcpError(null);
 
-  // Scrape commenters for the top-by-comments tweet exactly once, and only
-  // once the user actually opens the Top ICP tab — fetchRepliers' own ref
-  // guard makes this safe to re-run on every render without duplicating the
-  // (paid) request.
-  useEffect(() => {
-    if (activeTab === "topIcp" && topTweetByComments) {
-      fetchRepliers(topTweetByComments.id);
+    try {
+      const res = await fetch("/api/tweets/top-icp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tweets: tweets.map((tweet) => ({ id: tweet.id, replyCount: tweet.replyCount })),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Something went wrong");
+      }
+
+      setTopIcpRepliers(data.repliers ?? []);
+      setTopIcpRawCount(data.rawCount ?? 0);
+      setTopIcpTweetsScraped(data.tweetsScraped ?? 0);
+      setTopIcpTweetsSkipped(data.tweetsSkipped ?? 0);
+      setTopIcpStatus("idle");
+      setTopIcpPage(1);
+    } catch (err) {
+      setTopIcpError(err instanceof Error ? err.message : "Something went wrong");
+      setTopIcpStatus("error");
+      topIcpFetchedForRef.current = null;
     }
-  }, [activeTab, topTweetByComments]);
+  };
+
+  // Scrapes commenters across all fetched tweets (highest comments first,
+  // under a fixed dollar budget — see fetchRepliersForTweets) exactly once,
+  // and only once the user opens the Top ICP tab and the tweets themselves
+  // have finished loading — mirrors the on-demand pattern already used for
+  // Following/Followers.
+  useEffect(() => {
+    if (activeTab === "topIcp" && tweetsStatus === "idle" && tweets.length > 0 && source) {
+      fetchTopIcp(source.type === "profile" ? source.username : url.trim());
+    }
+    // fetchTopIcp is redefined every render and always closes over the
+    // current `tweets`/`source`, so omitting it here doesn't skip any state;
+    // including it would just make the effect re-fire needlessly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, tweetsStatus, tweets, source, url]);
 
   const handleDownloadTweets = async () => {
     if (isDownloading || tweets.length === 0 || source?.type !== "profile") return;
@@ -428,58 +472,46 @@ export default function Home() {
                 <p className="text-center text-sm text-zinc-400">Waiting for latest tweets to finish loading…</p>
               )}
 
-              {tweetsStatus === "idle" && !topTweetByComments && (
+              {tweetsStatus === "idle" && tweets.length === 0 && (
                 <p className="text-center text-sm text-zinc-400">
-                  No tweets found to determine top ICP profiles.
+                  No tweets found to scrape commenters from.
                 </p>
               )}
 
-              {topTweetByComments &&
-                (() => {
-                  const tweetId = topTweetByComments.id;
-                  const status = repliersStatus[tweetId] ?? "loading";
-                  const error = repliersError[tweetId] ?? null;
-                  const repliers = repliersByTweet[tweetId] ?? [];
-                  const rawCount = repliersRawCountByTweet[tweetId] ?? null;
+              {tweetsStatus === "idle" && tweets.length > 0 && (
+                <>
+                  {topIcpStatus === "loading" && (
+                    <p className="text-center text-sm text-zinc-400">
+                      Scraping commenters across the highest-comment tweets (up to a $1 budget)…
+                    </p>
+                  )}
 
-                  return (
-                    <>
-                      <div className="mb-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                          Top tweet by comments ({formatCount(topTweetByComments.replyCount)} comments) — ICP
-                          scores below are for the profiles that commented on it.
-                        </p>
-                        <a
-                          href={topTweetByComments.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1 block truncate text-zinc-800 hover:underline dark:text-zinc-100"
-                        >
-                          {topTweetByComments.text || topTweetByComments.url}
-                        </a>
-                      </div>
+                  {topIcpError && <p className="text-sm text-red-500">{topIcpError}</p>}
 
-                      {status === "loading" && (
-                        <p className="text-center text-sm text-zinc-400">Scraping commenters…</p>
-                      )}
+                  {topIcpStatus === "idle" && topIcpTweetsScraped !== null && (
+                    <div className="mb-3 rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+                      Scraped commenters from {topIcpTweetsScraped} of{" "}
+                      {topIcpTweetsScraped + (topIcpTweetsSkipped ?? 0)} tweets with comments (highest comments
+                      first) before hitting the $1 scrape budget.
+                    </div>
+                  )}
 
-                      {status === "error" && <p className="text-sm text-red-500">{error}</p>}
+                  {topIcpStatus === "idle" && topIcpRepliers.filter((r) => r.user !== null).length === 0 && (
+                    <p className="text-center text-sm text-zinc-400">
+                      No commenters found across the fetched tweets.
+                    </p>
+                  )}
 
-                      {status === "idle" && repliers.filter((r) => r.user !== null).length === 0 && (
-                        <p className="text-center text-sm text-zinc-400">No commenters found for this tweet.</p>
-                      )}
-
-                      {status === "idle" && repliers.filter((r) => r.user !== null).length > 0 && (
-                        <TopIcpTable
-                          repliers={repliers}
-                          rawCount={rawCount}
-                          currentPage={topIcpPage}
-                          onPageChange={setTopIcpPage}
-                        />
-                      )}
-                    </>
-                  );
-                })()}
+                  {topIcpStatus === "idle" && topIcpRepliers.filter((r) => r.user !== null).length > 0 && (
+                    <TopIcpTable
+                      repliers={topIcpRepliers}
+                      rawCount={topIcpRawCount}
+                      currentPage={topIcpPage}
+                      onPageChange={setTopIcpPage}
+                    />
+                  )}
+                </>
+              )}
             </>
           )}
         </div>

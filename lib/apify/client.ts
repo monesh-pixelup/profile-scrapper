@@ -189,7 +189,13 @@ function toTweetReplier(raw: RawApifyTweet): TweetReplier {
 // Note: there is no way to fetch a tweet's retweeters via this actor (it's
 // a search-based scraper, and X's search product doesn't expose that data
 // the way it exposes quotes/replies), so retweeters are not included here.
-export async function fetchTweetRepliers(tweetId: string): Promise<TweetRepliersResult> {
+// `maxTotalChargeUsd` is overridable so a multi-tweet caller (see
+// fetchRepliersForTweets below) can shrink the per-call cap as its own
+// overall budget runs down.
+export async function fetchTweetRepliers(
+  tweetId: string,
+  maxTotalChargeUsd: number = REPLIERS_MAX_CHARGE_USD
+): Promise<TweetRepliersResult> {
   const tweets = await runActorSync<RawApifyTweet>(
     TWEET_SCRAPER_ACTOR_ID,
     {
@@ -198,10 +204,62 @@ export async function fetchTweetRepliers(tweetId: string): Promise<TweetRepliers
       maxItems: REPLIERS_MAX_ITEMS,
       queryType: "Latest",
     },
-    REPLIERS_MAX_CHARGE_USD
+    maxTotalChargeUsd
   );
 
   return { repliers: tweets.map(toTweetReplier), rawCount: tweets.length };
+}
+
+export interface TopIcpResult {
+  // Deduped by username — the same account can comment on more than one
+  // of the source tweets.
+  repliers: TweetReplier[];
+  rawCount: number;
+  tweetsScraped: number;
+  tweetsSkipped: number;
+}
+
+// Scrapes commenters across many tweets under a single overall dollar
+// budget, rather than one fixed count of tweets: eligible tweets (those
+// with at least one comment) are visited highest-comments-first, spending
+// against `totalBudgetUsd` as it goes, and stops as soon as the remaining
+// budget can no longer cover a worthwhile call. Each individual call's own
+// cap shrinks to whatever budget is left, so — combined with Apify's own
+// per-run enforcement of that cap — the running total can never exceed
+// totalBudgetUsd even if actual per-tweet cost comes in higher than the
+// estimate used to track spend here.
+export async function fetchRepliersForTweets(
+  tweets: { id: string; replyCount: number }[],
+  totalBudgetUsd: number
+): Promise<TopIcpResult> {
+  const eligible = [...tweets].filter((t) => t.replyCount > 0).sort((a, b) => b.replyCount - a.replyCount);
+
+  const seen = new Set<string>();
+  const repliers: TweetReplier[] = [];
+  let rawCount = 0;
+  let spentUsd = 0;
+  let tweetsScraped = 0;
+
+  for (const tweet of eligible) {
+    const remainingUsd = totalBudgetUsd - spentUsd;
+    // Below this, a call isn't worth making — it wouldn't cover even a
+    // handful of results.
+    if (remainingUsd < TWEET_RATE_USD_PER_ITEM * 10) break;
+
+    const callCap = Math.min(REPLIERS_MAX_CHARGE_USD, remainingUsd);
+    const result = await fetchTweetRepliers(tweet.id, callCap);
+    tweetsScraped += 1;
+    rawCount += result.rawCount;
+    spentUsd += Math.min(result.rawCount, REPLIERS_MAX_ITEMS) * TWEET_RATE_USD_PER_ITEM;
+
+    for (const replier of result.repliers) {
+      if (!replier.user || seen.has(replier.user.userName)) continue;
+      seen.add(replier.user.userName);
+      repliers.push(replier);
+    }
+  }
+
+  return { repliers, rawCount, tweetsScraped, tweetsSkipped: eligible.length - tweetsScraped };
 }
 
 function toTwitterTweet(raw: RawApifyTweet): TwitterTweet | null {
