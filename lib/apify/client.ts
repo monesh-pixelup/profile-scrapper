@@ -102,6 +102,14 @@ function toConnectionFromFollowerRow(raw: RawApifyFollowerRow): TwitterConnectio
   return { ...user, relation: raw.sourceRelation };
 }
 
+// Runs the tweet-scraper actor and drops the placeholder "mock_tweet" rows
+// it returns when a search has no results (see RawApifyTweet.type) — they
+// aren't real tweets, and all share id -1.
+async function runTweetScraper(input: Record<string, unknown>, maxTotalChargeUsd: number): Promise<RawApifyTweet[]> {
+  const tweets = await runActorSync<RawApifyTweet>(TWEET_SCRAPER_ACTOR_ID, input, maxTotalChargeUsd);
+  return tweets.filter((tweet) => tweet.type !== "mock_tweet" && String(tweet.id) !== "-1");
+}
+
 function toTwitterUserFromTweetAuthor(raw: RawApifyTweet): TwitterUser | null {
   // The actor occasionally returns malformed stub tweets with an empty
   // `author: {}` (no fields at all); skip those rather than surfacing a
@@ -154,8 +162,7 @@ export async function fetchProfileConnectionsSplit(username: string): Promise<Tw
 
 // Accounts that quote-tweeted the given tweet.
 export async function fetchTweetQuoters(tweetId: string): Promise<TwitterUser[]> {
-  const tweets = await runActorSync<RawApifyTweet>(
-    TWEET_SCRAPER_ACTOR_ID,
+  const tweets = await runTweetScraper(
     {
       quoted_tweet_id: tweetId,
       maxItems: QUOTERS_MAX_ITEMS,
@@ -196,8 +203,7 @@ export async function fetchTweetRepliers(
   tweetId: string,
   maxTotalChargeUsd: number = REPLIERS_MAX_CHARGE_USD
 ): Promise<TweetRepliersResult> {
-  const tweets = await runActorSync<RawApifyTweet>(
-    TWEET_SCRAPER_ACTOR_ID,
+  const tweets = await runTweetScraper(
     {
       conversation_id: tweetId,
       "filter:replies": true,
@@ -292,8 +298,7 @@ export async function fetchLatestTweets(
 ): Promise<TwitterTweet[]> {
   const chargeCap = Math.max(LATEST_TWEETS_MIN_CHARGE_USD, maxItems * TWEET_RATE_USD_PER_ITEM * 1.2);
 
-  const tweets = await runActorSync<RawApifyTweet>(
-    TWEET_SCRAPER_ACTOR_ID,
+  const tweets = await runTweetScraper(
     {
       from: username,
       maxItems,

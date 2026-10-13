@@ -26,6 +26,10 @@ export interface RawApifyTweetAuthor {
 }
 
 export interface RawApifyTweet {
+  // "tweet" for real results. When a search matches nothing, the actor
+  // still bills its minimum charge and pads the dataset with placeholder
+  // rows of type "mock_tweet" (id -1, no author) instead of returning [].
+  type?: string;
   id: string;
   url: string;
   text: string;

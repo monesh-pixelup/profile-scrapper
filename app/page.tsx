@@ -13,7 +13,7 @@ import { scoreProfile } from "@/lib/icp/score";
 const DEFAULT_TWEETS_LIMIT = 1200;
 
 type Status = "idle" | "loading" | "error";
-type Tab = "tweets" | "following" | "followers" | "topIcp";
+type Tab = "tweets" | "following" | "followers" | "topIcp" | "replies";
 
 const PAGE_SIZE = 25;
 
@@ -21,6 +21,14 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "tweets", label: "Latest Tweets" },
   { key: "following", label: "Following" },
   { key: "followers", label: "Followers" },
+  { key: "topIcp", label: "Top ICP" },
+];
+
+// Tabs shown when the pasted URL is a single tweet rather than a profile:
+// both are fed by the same one replies fetch, so switching between them
+// never triggers a second paid call.
+const TWEET_TABS: { key: Tab; label: string }[] = [
+  { key: "replies", label: "Replies" },
   { key: "topIcp", label: "Top ICP" },
 ];
 
@@ -151,6 +159,17 @@ export default function Home() {
     if (!target) {
       setSubmitError("Could not extract a profile username or a tweet ID from that URL");
       setSendStatus("error");
+      isSubmittingRef.current = false;
+      return;
+    }
+
+    // Tweet URL: scrape that tweet's repliers directly. The tweets-to-fetch
+    // limit only applies to profiles, so it isn't validated here.
+    if (target.type === "tweet") {
+      setSource(target);
+      setActiveTab("replies");
+      setSendStatus("idle");
+      await fetchRepliers(target.tweetId);
       isSubmittingRef.current = false;
       return;
     }
@@ -300,8 +319,8 @@ export default function Home() {
   // have finished loading — mirrors the on-demand pattern already used for
   // Following/Followers.
   useEffect(() => {
-    if (activeTab === "topIcp" && tweetsStatus === "idle" && tweets.length > 0 && source) {
-      fetchTopIcp(source.type === "profile" ? source.username : url.trim());
+    if (activeTab === "topIcp" && tweetsStatus === "idle" && tweets.length > 0 && source?.type === "profile") {
+      fetchTopIcp(source.username);
     }
     // fetchTopIcp is redefined every render and always closes over the
     // current `tweets`/`source`, so omitting it here doesn't skip any state;
@@ -333,7 +352,7 @@ export default function Home() {
   return (
     <div className="flex flex-1 flex-col items-center bg-zinc-50 px-4 py-16 font-sans dark:bg-black">
       <h1 className="mb-6 text-2xl font-semibold text-zinc-800 dark:text-zinc-100">
-        Paste a profile URL
+        Paste a profile or tweet URL
       </h1>
 
       <div className="flex w-full max-w-2xl items-center gap-2 rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -385,7 +404,7 @@ export default function Home() {
       {source && (
         <div className="mt-8 w-full max-w-6xl">
           <div className="mb-6 flex justify-center gap-1 rounded-full border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
-            {TABS.map(({ key, label }) => (
+            {(source.type === "tweet" ? TWEET_TABS : TABS).map(({ key, label }) => (
               <button
                 key={key}
                 onClick={() => handleTabChange(key)}
@@ -466,7 +485,58 @@ export default function Home() {
             </>
           )}
 
-          {activeTab === "topIcp" && (
+          {source.type === "tweet" &&
+            (activeTab === "replies" || activeTab === "topIcp") &&
+            (() => {
+              const tweetId = source.tweetId;
+              const status = repliersStatus[tweetId] ?? "loading";
+              // One row per profile: the same account often replies several
+              // times in a thread, so keep only its first (most recent) reply.
+              // Replies with no profile data can't be matched, so they're kept.
+              const seenUsers = new Set<string>();
+              const repliers = (repliersByTweet[tweetId] ?? []).filter((replier) => {
+                if (!replier.user) return true;
+                const key = replier.user.userName.toLowerCase();
+                if (seenUsers.has(key)) return false;
+                seenUsers.add(key);
+                return true;
+              });
+
+              if (status === "loading") {
+                return <p className="text-center text-sm text-zinc-400">Fetching repliers…</p>;
+              }
+              if (status === "error") {
+                return <p className="text-sm text-red-500">{repliersError[tweetId]}</p>;
+              }
+
+              if (activeTab === "replies") {
+                return (
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                    {repliers.length > 0 && (
+                      <p className="mb-3 text-xs text-zinc-400">
+                        {repliers.length} unique profile{repliers.length === 1 ? "" : "s"} from{" "}
+                        {repliersByTweet[tweetId]?.length ?? 0} replies (repeat repliers shown once).
+                      </p>
+                    )}
+                    <RepliersList repliers={repliers} />
+                  </div>
+                );
+              }
+
+              if (repliers.every((r) => r.user === null)) {
+                return <p className="text-center text-sm text-zinc-400">No repliers found for this tweet.</p>;
+              }
+              return (
+                <TopIcpTable
+                  repliers={repliers}
+                  rawCount={repliers.length}
+                  currentPage={topIcpPage}
+                  onPageChange={setTopIcpPage}
+                />
+              );
+            })()}
+
+          {source.type === "profile" && activeTab === "topIcp" && (
             <>
               {tweetsStatus === "loading" && (
                 <p className="text-center text-sm text-zinc-400">Waiting for latest tweets to finish loading…</p>
@@ -580,87 +650,7 @@ function RepliersModal({
             <p className="text-center text-sm text-red-500">{error}</p>
           )}
 
-          {status === "idle" && repliers.length === 0 && (
-            <p className="text-center text-sm text-zinc-400">No repliers found for this tweet.</p>
-          )}
-
-          {status === "idle" && repliers.length > 0 && (
-            <ul className="flex flex-col gap-3">
-              {repliers.map((replier) =>
-                replier.user ? (
-                  (() => {
-                    const user = replier.user;
-                    const icp = scoreProfile(user);
-
-                    return (
-                      <li key={replier.replyId} className="flex items-start gap-3">
-                        {user.profilePicture ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={user.profilePicture}
-                            alt={user.userName}
-                            className="h-10 w-10 shrink-0 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="h-10 w-10 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <a
-                              href={`https://x.com/${user.userName}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium text-zinc-800 hover:underline dark:text-zinc-100"
-                            >
-                              {user.name || user.userName}
-                            </a>
-                            <span className="text-xs text-zinc-400">@{user.userName}</span>
-                            <span
-                              title={icp.signals.length > 0 ? icp.signals.join(", ") : "No ICP signals matched"}
-                              className="rounded-full bg-zinc-100 px-2 py-0.5 text-[0.65rem] font-medium whitespace-nowrap text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-                            >
-                              {icp.tag} · {icp.score}
-                            </span>
-                          </div>
-                          {user.description && (
-                            <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                              {user.description}
-                            </p>
-                          )}
-                          <p className="mt-0.5 text-xs text-zinc-400">
-                            {formatCount(user.followers)} followers
-                            {icp.signals.length > 0 && ` · ${icp.signals.join(" · ")}`}
-                          </p>
-                        </div>
-                      </li>
-                    );
-                  })()
-                ) : (
-                  <li key={replier.replyId} className="flex items-start gap-3">
-                    <div className="h-10 w-10 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800" />
-                    <div className="min-w-0 flex-1">
-                      <span className="text-sm font-medium text-zinc-400 dark:text-zinc-500">
-                        Unknown user
-                      </span>
-                      <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-                        Profile data unavailable for this reply.
-                      </p>
-                      {replier.replyUrl && (
-                        <a
-                          href={replier.replyUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-0.5 inline-block text-xs text-blue-600 hover:underline dark:text-blue-400"
-                        >
-                          View reply
-                        </a>
-                      )}
-                    </div>
-                  </li>
-                )
-              )}
-            </ul>
-          )}
+          {status === "idle" && <RepliersList repliers={repliers} />}
         </div>
 
         <div className="border-t border-zinc-200 px-4 py-2 text-xs text-zinc-400 dark:border-zinc-800">
@@ -676,6 +666,92 @@ function RepliersModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// Every reply in the order the actor returned it, each replier tagged with
+// its ICP score. Shared by the replies modal and the tweet-URL Replies tab.
+function RepliersList({ repliers }: { repliers: TweetReplier[] }) {
+  if (repliers.length === 0) {
+    return <p className="text-center text-sm text-zinc-400">No repliers found for this tweet.</p>;
+  }
+
+  return (
+    <ul className="flex flex-col gap-3">
+      {repliers.map((replier) =>
+        replier.user ? (
+          (() => {
+            const user = replier.user;
+            const icp = scoreProfile(user);
+
+            return (
+              <li key={replier.replyId} className="flex items-start gap-3">
+                {user.profilePicture ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.profilePicture}
+                    alt={user.userName}
+                    className="h-10 w-10 shrink-0 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="h-10 w-10 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <a
+                      href={`https://x.com/${user.userName}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium text-zinc-800 hover:underline dark:text-zinc-100"
+                    >
+                      {user.name || user.userName}
+                    </a>
+                    <span className="text-xs text-zinc-400">@{user.userName}</span>
+                    <span
+                      title={icp.signals.length > 0 ? icp.signals.join(", ") : "No ICP signals matched"}
+                      className="rounded-full bg-zinc-100 px-2 py-0.5 text-[0.65rem] font-medium whitespace-nowrap text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                    >
+                      {icp.tag} · {icp.score}
+                    </span>
+                  </div>
+                  {user.description && (
+                    <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
+                      {user.description}
+                    </p>
+                  )}
+                  <p className="mt-0.5 text-xs text-zinc-400">
+                    {formatCount(user.followers)} followers
+                    {icp.signals.length > 0 && ` · ${icp.signals.join(" · ")}`}
+                  </p>
+                </div>
+              </li>
+            );
+          })()
+        ) : (
+          <li key={replier.replyId} className="flex items-start gap-3">
+            <div className="h-10 w-10 shrink-0 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+            <div className="min-w-0 flex-1">
+              <span className="text-sm font-medium text-zinc-400 dark:text-zinc-500">
+                Unknown user
+              </span>
+              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                Profile data unavailable for this reply.
+              </p>
+              {replier.replyUrl && (
+                <a
+                  href={replier.replyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-0.5 inline-block text-xs text-blue-600 hover:underline dark:text-blue-400"
+                >
+                  View reply
+                </a>
+              )}
+            </div>
+          </li>
+        )
+      )}
+    </ul>
   );
 }
 
@@ -1124,24 +1200,55 @@ function TopIcpTable({
   currentPage: number;
   onPageChange: (page: number) => void;
 }) {
+  const [minIcpScore, setMinIcpScore] = useState("");
+
   const scored = repliers
     .filter((replier): replier is TweetReplier & { user: TwitterUser } => replier.user !== null)
     .map((replier) => ({ replier, user: replier.user, icp: scoreProfile(replier.user) }))
     .sort((a, b) => b.icp.score - a.icp.score);
 
-  const totalPages = Math.max(1, Math.ceil(scored.length / PAGE_SIZE));
+  const minIcpScoreNum = toNumberOrUndefined(minIcpScore);
+  const filtered = scored.filter(({ icp }) => minIcpScoreNum === undefined || icp.score >= minIcpScoreNum);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const start = (safePage - 1) * PAGE_SIZE;
-  const pageItems = scored.slice(start, start + PAGE_SIZE);
+  const pageItems = filtered.slice(start, start + PAGE_SIZE);
 
   return (
     <div className="w-full">
-      <div className="mb-3 flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
-        <span>Ranked by ICP score, highest first.</span>
-        <span>
+      <div className="mb-3 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Min ICP score</label>
+          <input
+            type="number"
+            value={minIcpScore}
+            onChange={(e) => {
+              setMinIcpScore(e.target.value);
+              onPageChange(1);
+            }}
+            placeholder="0"
+            className="w-24 rounded-lg border border-zinc-200 bg-transparent px-2 py-1 text-zinc-800 outline-none dark:border-zinc-700 dark:text-zinc-100"
+          />
+        </div>
+        {minIcpScore && (
+          <button
+            onClick={() => {
+              setMinIcpScore("");
+              onPageChange(1);
+            }}
+            className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-white"
+          >
+            Clear filter
+          </button>
+        )}
+        <span className="ml-auto text-right text-xs text-zinc-400">
+          Ranked by ICP score, highest first.
+          <br />
           {rawCount !== null
-            ? `${rawCount} commenter${rawCount === 1 ? "" : "s"} found, ${scored.length} with usable profile data.`
-            : `${scored.length} profiles scored.`}
+            ? `${rawCount} commenter${rawCount === 1 ? "" : "s"} found, ${scored.length} with usable profile data`
+            : `${scored.length} profiles scored`}
+          {minIcpScoreNum !== undefined && `, ${filtered.length} at or above ${minIcpScoreNum}`}.
         </span>
       </div>
 
@@ -1221,10 +1328,14 @@ function TopIcpTable({
         </table>
       </div>
 
+      {filtered.length === 0 && (
+        <p className="mt-4 text-center text-sm text-zinc-400">No profiles match the current filters.</p>
+      )}
+
       {totalPages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
           <span>
-            Page {safePage} of {totalPages} ({scored.length} profiles)
+            Page {safePage} of {totalPages} ({filtered.length} profiles)
           </span>
           <div className="flex gap-2">
             <button
