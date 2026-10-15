@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchRepliersForTweets } from "@/lib/apify/client";
+import { saveIcpLeadsAfterResponse } from "@/lib/leads/store";
+import type { TwitterUser } from "@/lib/twitter/types";
 
 // Total dollar budget for a single Top ICP scrape, spent across as many of
 // the (highest-comments-first) tweets as it'll cover — matches the cap used
@@ -7,7 +9,9 @@ import { fetchRepliersForTweets } from "@/lib/apify/client";
 const TOP_ICP_BUDGET_USD = 1;
 
 export async function POST(request: Request) {
-  let body: { tweets?: { id?: unknown; replyCount?: unknown }[] };
+  // `username` is the profile the tweets belong to — optional, only used to
+  // record where saved ICP leads came from.
+  let body: { tweets?: { id?: unknown; replyCount?: unknown }[]; username?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -26,6 +30,10 @@ export async function POST(request: Request) {
 
   try {
     const result = await fetchRepliersForTweets(tweets, TOP_ICP_BUDGET_USD);
+    saveIcpLeadsAfterResponse(
+      result.repliers.map((r) => r.user).filter((user): user is TwitterUser => user !== null),
+      { type: "top_icp", ref: typeof body.username === "string" ? body.username : undefined }
+    );
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error while scraping commenters";

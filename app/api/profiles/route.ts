@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { parseTwitterUrl } from "@/lib/twitter/parseUrl";
 import { fetchProfileConnections, fetchTweetQuoters, fetchTweetRepliers } from "@/lib/apify/client";
 import { filterDesignProfiles } from "@/lib/twitter/filter";
+import { saveIcpLeadsAfterResponse } from "@/lib/leads/store";
 import type { TwitterUser } from "@/lib/twitter/types";
 
 export async function POST(request: Request) {
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
     if (target.type === "profile") {
       const connections = await fetchProfileConnections(target.username);
       const profiles = filterDesignProfiles(connections);
+      saveIcpLeadsAfterResponse(profiles, { type: "profile_scan", ref: target.username });
       return NextResponse.json({ source: target, profiles });
     }
 
@@ -43,6 +45,7 @@ export async function POST(request: Request) {
       .map((replier) => replier.user)
       .filter((user): user is TwitterUser => user !== null);
     const profiles = filterDesignProfiles([...quoters, ...replierUsers]);
+    saveIcpLeadsAfterResponse(profiles, { type: "profile_scan", ref: target.tweetId });
     return NextResponse.json({ source: target, profiles });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error while fetching profiles";

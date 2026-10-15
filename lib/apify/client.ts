@@ -43,6 +43,12 @@ const REPLIERS_MAX_CHARGE_USD = 0.1;
 // requested counts instead of leaving a fixed cap that would truncate them.
 const LATEST_TWEETS_MIN_CHARGE_USD = 0.4;
 
+// The tweet-scraper actor bills at least this many items per run: a search
+// with fewer real results is padded with "mock_tweet" rows up to roughly
+// this count (verified against real runs). Used to estimate spend.
+export const TWEET_SCRAPER_MIN_BILLED_ITEMS = 15;
+export const TWEET_SCRAPER_RATE_USD_PER_ITEM = TWEET_RATE_USD_PER_ITEM;
+
 function getApiToken(): string {
   if (!APIFY_API_TOKEN) {
     throw new Error(
@@ -199,14 +205,19 @@ function toTweetReplier(raw: RawApifyTweet): TweetReplier {
 // `maxTotalChargeUsd` is overridable so a multi-tweet caller (see
 // fetchRepliersForTweets below) can shrink the per-call cap as its own
 // overall budget runs down.
+//
+// `sinceId` limits results to replies at or after that reply id, so a tweet
+// that was already scraped can be topped up with only its new replies.
 export async function fetchTweetRepliers(
   tweetId: string,
-  maxTotalChargeUsd: number = REPLIERS_MAX_CHARGE_USD
+  maxTotalChargeUsd: number = REPLIERS_MAX_CHARGE_USD,
+  sinceId?: string
 ): Promise<TweetRepliersResult> {
   const tweets = await runTweetScraper(
     {
       conversation_id: tweetId,
       "filter:replies": true,
+      ...(sinceId ? { since_id: sinceId } : {}),
       maxItems: REPLIERS_MAX_ITEMS,
       queryType: "Latest",
     },
@@ -284,6 +295,40 @@ function toTwitterTweet(raw: RawApifyTweet): TwitterTweet | null {
     quoteCount: raw.quoteCount ?? 0,
     viewCount: raw.viewCount ?? 0,
   };
+}
+
+// Original posts only (no retweets, no replies to others), filtered by the
+// actor itself so skipped tweets are never billed. Used by the daily cron:
+//   - `minReplies`: only tweets with at least this many comments
+//   - `sinceTime`: only tweets posted at/after this unix time (seconds)
+export async function fetchProfilePosts(
+  username: string,
+  options: { maxItems: number; minReplies: number; sinceTime?: number }
+): Promise<TwitterTweet[]> {
+  const query = [
+    `from:${username}`,
+    // Native retweets are already excluded by default (no include:nativeretweets).
+    "-filter:replies",
+    `min_replies:${options.minReplies}`,
+    ...(options.sinceTime !== undefined ? [`since_time:${options.sinceTime}`] : []),
+  ].join(" ");
+
+  const chargeCap = Math.max(
+    TWEET_SCRAPER_MIN_BILLED_ITEMS * TWEET_RATE_USD_PER_ITEM,
+    options.maxItems * TWEET_RATE_USD_PER_ITEM * 1.2
+  );
+  const tweets = await runTweetScraper(
+    { twitterContent: query, maxItems: options.maxItems, queryType: "Latest" },
+    chargeCap
+  );
+
+  return tweets
+    // Belt-and-braces in case the search operators are ever loosened.
+    .filter((raw) => !raw.isReply && !raw.retweeted_tweet && !raw.text?.startsWith("RT @"))
+    .filter((raw) => (raw.replyCount ?? 0) >= options.minReplies)
+    .map(toTwitterTweet)
+    .filter((tweet): tweet is TwitterTweet => tweet !== null)
+    .slice(0, options.maxItems);
 }
 
 // Latest tweets posted by the account, newest first — no type filter (posts,

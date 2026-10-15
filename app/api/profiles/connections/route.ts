@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseTwitterUrl } from "@/lib/twitter/parseUrl";
 import { fetchProfileConnectionsSplit } from "@/lib/apify/client";
+import { saveIcpLeadsAfterResponse } from "@/lib/leads/store";
 
 export async function POST(request: Request) {
   let body: { url?: string };
@@ -36,6 +37,8 @@ export async function POST(request: Request) {
     const connections = await fetchProfileConnectionsSplit(target.username);
     const followers = connections.filter((c) => c.relation === "followers");
     const following = connections.filter((c) => c.relation === "following");
+    saveIcpLeadsAfterResponse(followers, { type: "follower", ref: target.username });
+    saveIcpLeadsAfterResponse(following, { type: "following", ref: target.username });
     return NextResponse.json({ source: target, followers, following });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error while fetching connections";

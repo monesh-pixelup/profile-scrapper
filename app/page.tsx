@@ -5,6 +5,8 @@ import type { TweetReplier, TwitterConnection, TwitterTweet, TwitterUser } from 
 import { parseTwitterUrl, type TwitterUrlTarget } from "@/lib/twitter/parseUrl";
 import { buildTweetsWorkbookBlob } from "@/lib/export/tweetsWorkbook";
 import { scoreProfile } from "@/lib/icp/score";
+import type { LeadSource } from "@/lib/leads/types";
+import { AddToTargetButton } from "@/components/AddToTargetButton";
 
 // Mirrors LATEST_TWEETS_MAX_ITEMS in lib/apify/client.ts (the server-side
 // default used when the field below is left blank) — kept as a plain
@@ -291,6 +293,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tweets: tweets.map((tweet) => ({ id: tweet.id, replyCount: tweet.replyCount })),
+          username: forUrl,
         }),
       });
 
@@ -479,6 +482,10 @@ export default function Home() {
                       profiles={list}
                       currentPage={connectionsPage}
                       onPageChange={setConnectionsPage}
+                      leadSource={{
+                        type: activeTab === "following" ? "following" : "follower",
+                        ref: source.type === "profile" ? source.username : undefined,
+                      }}
                     />
                   );
                 })()}
@@ -532,6 +539,7 @@ export default function Home() {
                   rawCount={repliers.length}
                   currentPage={topIcpPage}
                   onPageChange={setTopIcpPage}
+                  leadSource={{ type: "tweet_reply", ref: tweetId }}
                 />
               );
             })()}
@@ -578,6 +586,7 @@ export default function Home() {
                       rawCount={topIcpRawCount}
                       currentPage={topIcpPage}
                       onPageChange={setTopIcpPage}
+                      leadSource={{ type: "top_icp", ref: source.username }}
                     />
                   )}
                 </>
@@ -1012,10 +1021,12 @@ function ConnectionsTable({
   profiles,
   currentPage,
   onPageChange,
+  leadSource,
 }: {
   profiles: TwitterConnection[];
   currentPage: number;
   onPageChange: (page: number) => void;
+  leadSource?: LeadSource;
 }) {
   const [minIcpScore, setMinIcpScore] = useState("");
   const [sortField, setSortField] = useState<ConnectionSortField | null>("icpScore");
@@ -1102,6 +1113,7 @@ function ConnectionsTable({
                   </button>
                 </th>
               ))}
+              <th className="px-3 py-2 font-medium">Target</th>
             </tr>
           </thead>
           <tbody>
@@ -1152,6 +1164,9 @@ function ConnectionsTable({
                 <td className="px-3 py-2 whitespace-nowrap text-zinc-600 dark:text-zinc-300">
                   {formatCount(profile.following)}
                 </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <AddToTargetButton user={profile} source={leadSource} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1194,11 +1209,13 @@ function TopIcpTable({
   rawCount,
   currentPage,
   onPageChange,
+  leadSource,
 }: {
   repliers: TweetReplier[];
   rawCount: number | null;
   currentPage: number;
   onPageChange: (page: number) => void;
+  leadSource?: LeadSource;
 }) {
   const [minIcpScore, setMinIcpScore] = useState("");
 
@@ -1261,6 +1278,7 @@ function TopIcpTable({
               <th className="px-3 py-2 font-medium">ICP Score</th>
               <th className="px-3 py-2 font-medium">Followers</th>
               <th className="px-3 py-2 font-medium">Comment</th>
+              <th className="px-3 py-2 font-medium">Target</th>
             </tr>
           </thead>
           <tbody>
@@ -1321,6 +1339,9 @@ function TopIcpTable({
                   ) : (
                     "—"
                   )}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <AddToTargetButton user={user} source={leadSource} />
                 </td>
               </tr>
             ))}

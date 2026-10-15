@@ -26,9 +26,9 @@ export interface RawApifyTweetAuthor {
 }
 
 export interface RawApifyTweet {
-  // "tweet" for real results. When a search matches nothing, the actor
-  // still bills its minimum charge and pads the dataset with placeholder
-  // rows of type "mock_tweet" (id -1, no author) instead of returning [].
+  // "tweet" for real results. When a search returns fewer than ~15 results
+  // (including none), the actor still bills a minimum and pads the dataset
+  // with placeholder rows of type "mock_tweet" (id -1, no author).
   type?: string;
   id: string;
   url: string;
@@ -39,5 +39,8 @@ export interface RawApifyTweet {
   likeCount?: number;
   quoteCount?: number;
   viewCount?: number;
+  isReply?: boolean;
+  // Present (non-null) when the row is a native retweet.
+  retweeted_tweet?: unknown;
   author?: RawApifyTweetAuthor;
 }
