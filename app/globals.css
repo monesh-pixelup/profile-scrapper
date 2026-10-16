@@ -1,26 +1,60 @@
 @import "tailwindcss";
 
-/* Dark mode is class-based (the `dark` class on <html> in app/layout.tsx)
-   so the app stays dark regardless of the OS setting. Remove that class to
-   go back to light. */
+/* Pixelup Labs design system (see design-system.md): pure black canvas,
+   hairline structure, one blue accent, square corners, uppercase controls.
+   The app is dark only; the `dark` class on <html> keeps `dark:` variants on. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-.dark {
-  --background: #09090b;
-  --foreground: #ededed;
+  --bg: #000000;
+  --panel: #141414;
+  --panel-2: #1b1b1b;
+  --line: #1f1f1f;
+  --line-2: #2e2e2e;
+  --text: #ffffff;
+  --muted: #8f8f8f;
+  --blue: #1f3bf0;
+  --blue-hover: #3450ff;
   color-scheme: dark;
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-brand: var(--blue);
+  --color-brand-hover: var(--blue-hover);
+
+  --font-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-inter-tight), var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Zinc scale remapped onto the design-system greys. */
+  --color-white: #ffffff;
+  --color-zinc-50: #f5f5f5;
+  --color-zinc-100: #ffffff;
+  --color-zinc-200: #cfcfcf;
+  --color-zinc-300: #cfcfcf;
+  --color-zinc-400: #8f8f8f;
+  --color-zinc-500: #8f8f8f;
+  --color-zinc-600: #6b6b6b;
+  --color-zinc-700: #2e2e2e;
+  --color-zinc-800: #1f1f1f;
+  --color-zinc-900: #141414;
+  --color-zinc-950: #000000;
+
+  /* Square everything. */
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
 
   --animate-slide-in-right: slide-in-right 220ms cubic-bezier(0.32, 0.72, 0, 1);
   --animate-fade-in: fade-in 180ms ease-out;
@@ -44,8 +78,73 @@
   }
 }
 
+* {
+  border-radius: 0 !important;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Controls speak in uppercase sans. */
+button,
+[role="tab"] {
+  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Inputs: panel fill, no border at rest, outline on hover. */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background-color: var(--panel);
+  border: 1px solid transparent !important;
+  color: var(--text);
+}
+input:not([type="checkbox"]):not([type="radio"]):hover,
+select:hover,
+textarea:hover {
+  border-color: var(--line-2) !important;
+}
+::placeholder {
+  color: #5e5e5e;
+}
+
+/* Mono is for meta: table headers, counters. */
+thead th {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }

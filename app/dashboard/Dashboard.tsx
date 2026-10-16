@@ -29,10 +29,10 @@ const CONTACTED_STATUSES: LeadStatus[] = ["contacted", "replied", "meeting", "wo
 
 const STATUS_STYLES: Record<LeadStatus, string> = {
   new: "border-zinc-700 bg-zinc-900 text-zinc-300",
-  contacted: "border-sky-900 bg-sky-950 text-sky-300",
-  replied: "border-violet-900 bg-violet-950 text-violet-300",
-  meeting: "border-amber-900 bg-amber-950 text-amber-300",
-  won: "border-emerald-900 bg-emerald-950 text-emerald-300",
+  contacted: "border-zinc-700 bg-zinc-900 text-zinc-300",
+  replied: "border-zinc-700 bg-zinc-900 text-zinc-300",
+  meeting: "border-brand bg-brand text-white",
+  won: "border-brand bg-brand text-white",
   not_interested: "border-zinc-800 bg-zinc-950 text-zinc-500",
 };
 
@@ -289,7 +289,7 @@ export function Dashboard() {
           <button
             onClick={load}
             disabled={loadState === "loading"}
-            className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:text-white disabled:opacity-50"
+            className="border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-600 hover:text-white disabled:opacity-50"
           >
             {loadState === "loading" ? "Loading…" : "Refresh"}
           </button>
@@ -298,7 +298,7 @@ export function Dashboard() {
         {!configured && <SetupNotice />}
 
         {loadState === "error" && (
-          <div className="mb-6 rounded-xl border border-red-900 bg-red-950/50 p-4 text-sm text-red-300">
+          <div className="mb-6 border border-red-900 bg-red-950/50 p-4 text-sm text-red-300">
             {loadError}
           </div>
         )}
@@ -325,7 +325,7 @@ export function Dashboard() {
             </div>
 
             <div className="mb-6 grid gap-3 lg:grid-cols-[2fr_3fr]">
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <div className="border border-zinc-800 bg-zinc-900/60 p-4">
                 <div className="flex items-baseline justify-between">
                   <h2 className="text-sm font-medium text-zinc-300">Target list progress</h2>
                   <span className="text-xs text-zinc-500">
@@ -336,14 +336,14 @@ export function Dashboard() {
                   {percent(stats.targetReached, stats.target)}%
                 </p>
                 <div
-                  className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800"
+                  className="mt-3 h-2 overflow-hidden bg-zinc-800"
                   role="progressbar"
                   aria-valuenow={percent(stats.targetReached, stats.target)}
                   aria-valuemin={0}
                   aria-valuemax={100}
                 >
                   <div
-                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    className="h-full bg-brand transition-all"
                     style={{ width: `${percent(stats.targetReached, stats.target)}%` }}
                   />
                 </div>
@@ -353,7 +353,7 @@ export function Dashboard() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+              <div className="border border-zinc-800 bg-zinc-900/60 p-4">
                 <h2 className="mb-3 text-sm font-medium text-zinc-300">Pipeline</h2>
                 <ul className="flex flex-col gap-2">
                   {LEAD_STATUSES.map((status) => {
@@ -373,9 +373,9 @@ export function Dashboard() {
                           >
                             {LEAD_STATUS_LABELS[status]}
                           </span>
-                          <span className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                          <span className="h-1.5 overflow-hidden bg-zinc-800">
                             <span
-                              className="block h-full rounded-full bg-zinc-400 transition-all group-hover:bg-zinc-200"
+                              className="block h-full bg-zinc-400 transition-all group-hover:bg-zinc-200"
                               style={{ width: `${percent(count, stats.total)}%` }}
                             />
                           </span>
@@ -388,7 +388,7 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="mb-4 flex flex-wrap gap-1 rounded-full border border-zinc-800 bg-zinc-900 p-1 sm:w-fit">
+            <div className="mb-4 flex flex-wrap gap-1 border border-zinc-800 bg-zinc-900 p-1 sm:w-fit">
               {VIEWS.map(({ key, label }) => (
                 <button
                   key={key}
@@ -396,13 +396,13 @@ export function Dashboard() {
                     setView(key);
                     setPage(1);
                   }}
-                  className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                    view === key ? "bg-zinc-100 text-zinc-900" : "text-zinc-400 hover:text-white"
+                  className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium transition-colors ${
+                    view === key ? "bg-brand text-white" : "text-zinc-400 hover:text-white"
                   }`}
                 >
                   {label}
                   <span
-                    className={`rounded-full px-1.5 text-[0.65rem] tabular-nums ${
+                    className={`px-1.5 text-[0.65rem] tabular-nums ${
                       view === key ? "bg-zinc-300 text-zinc-800" : "bg-zinc-800 text-zinc-400"
                     }`}
                   >
@@ -412,20 +412,20 @@ export function Dashboard() {
               ))}
             </div>
 
-            <div className="mb-3 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 text-sm">
+            <div className="mb-3 flex flex-wrap items-end gap-3 border border-zinc-800 bg-zinc-900/60 p-3 text-sm">
               <Field label="Search">
                 <input
                   value={search}
                   onChange={(e) => resetPage(setSearch)(e.target.value)}
                   placeholder="Name, handle, bio, notes…"
-                  className="w-56 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
+                  className="w-56 border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
                 />
               </Field>
               <Field label="Status">
                 <select
                   value={statusFilter}
                   onChange={(e) => resetPage(setStatusFilter)(e.target.value as LeadStatus | "all")}
-                  className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
+                  className="border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
                 >
                   <option value="all">All statuses</option>
                   {LEAD_STATUSES.map((s) => (
@@ -439,7 +439,7 @@ export function Dashboard() {
                 <select
                   value={sourceFilter}
                   onChange={(e) => resetPage(setSourceFilter)(e.target.value as LeadSourceType | "all")}
-                  className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
+                  className="border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
                 >
                   <option value="all">All sources</option>
                   {sourceOptions.map((s) => (
@@ -455,14 +455,14 @@ export function Dashboard() {
                   value={minScore}
                   onChange={(e) => resetPage(setMinScore)(e.target.value)}
                   placeholder="0"
-                  className="w-24 rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
+                  className="w-24 border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
                 />
               </Field>
               <Field label="Sort by">
                 <select
                   value={sortKey}
                   onChange={(e) => resetPage(setSortKey)(e.target.value as SortKey)}
-                  className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
+                  className="border border-zinc-700 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
                 >
                   <option value="score">ICP score</option>
                   <option value="followers">Followers</option>
@@ -476,7 +476,7 @@ export function Dashboard() {
             </div>
 
             {selectedIds.length > 0 && (
-              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs">
+              <div className="mb-3 flex flex-wrap items-center gap-2 border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs">
                 <span className="mr-2 font-medium text-zinc-200">{selectedIds.length} selected</span>
                 <BulkButton onClick={() => patchLeads(selectedIds, () => ({ reached_out: true }))}>
                   Mark reached out
@@ -500,12 +500,12 @@ export function Dashboard() {
             )}
 
             {actionError && (
-              <div className="mb-3 rounded-xl border border-red-900 bg-red-950/50 px-3 py-2 text-xs text-red-300">
+              <div className="mb-3 border border-red-900 bg-red-950/50 px-3 py-2 text-xs text-red-300">
                 {actionError}
               </div>
             )}
 
-            <div className="w-full overflow-x-auto rounded-xl border border-zinc-800">
+            <div className="w-full overflow-x-auto border border-zinc-800">
               <table className="w-full min-w-250 border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900 text-xs uppercase tracking-wide text-zinc-400">
@@ -643,9 +643,9 @@ function LeadRow({
             type="checkbox"
             checked={lead.reached_out}
             onChange={(e) => onPatch({ reached_out: e.target.checked })}
-            className="h-4 w-4 accent-emerald-500"
+            className="h-4 w-4 accent-[#1F3BF0]"
           />
-          <span className={`text-xs ${lead.reached_out ? "text-emerald-400" : "text-zinc-500"}`}>
+          <span className={`text-xs ${lead.reached_out ? "text-zinc-300" : "text-zinc-500"}`}>
             {lead.reached_out ? formatDate(lead.reached_out_at) : "Not yet"}
           </span>
         </label>
@@ -654,13 +654,13 @@ function LeadRow({
         <button
           onClick={onOpen}
           title="View profile details"
-          className="group flex w-full items-center gap-2 rounded-lg text-left"
+          className="group flex w-full items-center gap-2 text-left"
         >
           {lead.profile_picture ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={lead.profile_picture} alt={lead.handle} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+            <img src={lead.profile_picture} alt={lead.handle} className="h-8 w-8 shrink-0 object-cover" />
           ) : (
-            <div className="h-8 w-8 shrink-0 rounded-full bg-zinc-800" />
+            <div className="h-8 w-8 shrink-0 bg-zinc-800" />
           )}
           <div className="min-w-0 max-w-64">
             <span
@@ -678,7 +678,7 @@ function LeadRow({
       <td className="px-3 py-2 whitespace-nowrap">
         <span
           title={lead.icp_signals.length > 0 ? lead.icp_signals.join(", ") : "No ICP signals matched"}
-          className="rounded-full bg-zinc-800 px-2 py-0.5 text-[0.65rem] font-medium text-zinc-300"
+          className="bg-zinc-800 px-2 py-0.5 text-[0.65rem] font-medium text-zinc-300"
         >
           {lead.icp_tag} · {lead.icp_score}
         </span>
@@ -688,7 +688,7 @@ function LeadRow({
         <select
           value={lead.status}
           onChange={(e) => onPatch({ status: e.target.value as LeadStatus })}
-          className={`rounded-full border px-2 py-0.5 text-xs outline-none ${STATUS_STYLES[lead.status]}`}
+          className={`border px-2 py-0.5 text-xs outline-none ${STATUS_STYLES[lead.status]}`}
         >
           {LEAD_STATUSES.map((s) => (
             <option key={s} value={s} className="bg-zinc-900 text-zinc-100">
@@ -703,7 +703,7 @@ function LeadRow({
           title={lead.in_target_list ? "Remove from target list" : "Add to target list"}
           aria-pressed={lead.in_target_list}
           className={`text-lg leading-none transition-colors ${
-            lead.in_target_list ? "text-amber-400 hover:text-amber-300" : "text-zinc-700 hover:text-zinc-400"
+            lead.in_target_list ? "text-zinc-300 hover:text-zinc-300" : "text-zinc-700 hover:text-zinc-400"
           }`}
         >
           {lead.in_target_list ? "★" : "☆"}
@@ -718,7 +718,7 @@ function LeadRow({
             if (e.key === "Enter") e.currentTarget.blur();
           }}
           placeholder="Add a note…"
-          className="w-48 rounded-md border border-transparent bg-transparent px-2 py-1 text-xs text-zinc-300 outline-none placeholder:text-zinc-600 hover:border-zinc-800 focus:border-zinc-600 focus:bg-zinc-950"
+          className="w-48 border border-transparent bg-transparent px-2 py-1 text-xs text-zinc-300 outline-none placeholder:text-zinc-600 hover:border-zinc-800 focus:border-zinc-600 focus:bg-zinc-950"
         />
       </td>
       <td className="px-3 py-2 whitespace-nowrap text-xs text-zinc-500">
@@ -730,7 +730,7 @@ function LeadRow({
           onClick={onDelete}
           aria-label={`Delete @${lead.handle}`}
           title="Delete lead"
-          className="rounded-full p-1 text-zinc-600 hover:bg-zinc-800 hover:text-red-400"
+          className="p-1 text-zinc-600 hover:bg-zinc-800 hover:text-red-400"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -842,7 +842,7 @@ function LeadDrawer({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+            className="p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -858,10 +858,10 @@ function LeadDrawer({
               <img
                 src={lead.profile_picture.replace("_normal.", "_400x400.")}
                 alt={lead.handle}
-                className="h-16 w-16 shrink-0 rounded-full object-cover ring-1 ring-zinc-800"
+                className="h-16 w-16 shrink-0 object-cover ring-1 ring-zinc-800"
               />
             ) : (
-              <div className="h-16 w-16 shrink-0 rounded-full bg-zinc-800" />
+              <div className="h-16 w-16 shrink-0 bg-zinc-800" />
             )}
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-lg font-semibold">{lead.name || lead.handle}</h2>
@@ -878,7 +878,7 @@ function LeadDrawer({
                 href={profileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1 rounded-full border border-zinc-700 px-3 py-1 text-xs font-medium text-zinc-200 hover:border-zinc-500 hover:text-white"
+                className="mt-2 inline-flex items-center gap-1 border border-zinc-700 px-3 py-1 text-xs font-medium text-zinc-200 hover:border-zinc-500 hover:text-white"
               >
                 Open on X ↗
               </a>
@@ -910,14 +910,14 @@ function LeadDrawer({
               <span className="text-sm font-medium">{lead.icp_tag ?? "—"}</span>
               <span className="text-xs tabular-nums text-zinc-400">{lead.icp_score} / 100</span>
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
-              <div className="h-full rounded-full bg-zinc-300" style={{ width: `${scorePct}%` }} />
+            <div className="mt-2 h-1.5 overflow-hidden bg-zinc-800">
+              <div className="h-full bg-zinc-300" style={{ width: `${scorePct}%` }} />
             </div>
             <p className="mt-3 mb-1.5 text-xs text-zinc-500">Matched signals</p>
             {lead.icp_signals.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {lead.icp_signals.map((signal) => (
-                  <span key={signal} className="rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-300">
+                  <span key={signal} className="border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-xs text-zinc-300">
                     {signal}
                   </span>
                 ))}
@@ -936,7 +936,7 @@ function LeadDrawer({
               <dt className="text-zinc-500">Scraped from</dt>
               <dd className="min-w-0 truncate">
                 {source ? (
-                  <a href={source.href} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">
+                  <a href={source.href} target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:underline">
                     {source.label} ↗
                   </a>
                 ) : (
@@ -952,14 +952,14 @@ function LeadDrawer({
               <label className="flex cursor-pointer items-center justify-between gap-3">
                 <span className="text-sm text-zinc-300">Reached out</span>
                 <span className="flex items-center gap-2">
-                  <span className={`text-xs ${lead.reached_out ? "text-emerald-400" : "text-zinc-500"}`}>
+                  <span className={`text-xs ${lead.reached_out ? "text-zinc-300" : "text-zinc-500"}`}>
                     {lead.reached_out ? formatDateTime(lead.reached_out_at) : "Not yet"}
                   </span>
                   <input
                     type="checkbox"
                     checked={lead.reached_out}
                     onChange={(e) => onPatch({ reached_out: e.target.checked })}
-                    className="h-4 w-4 accent-emerald-500"
+                    className="h-4 w-4 accent-[#1F3BF0]"
                   />
                 </span>
               </label>
@@ -969,7 +969,7 @@ function LeadDrawer({
                 <select
                   value={lead.status}
                   onChange={(e) => onPatch({ status: e.target.value as LeadStatus })}
-                  className={`rounded-full border px-2 py-0.5 text-xs outline-none ${STATUS_STYLES[lead.status]}`}
+                  className={`border px-2 py-0.5 text-xs outline-none ${STATUS_STYLES[lead.status]}`}
                 >
                   {LEAD_STATUSES.map((s) => (
                     <option key={s} value={s} className="bg-zinc-900 text-zinc-100">
@@ -984,9 +984,9 @@ function LeadDrawer({
                 <button
                   onClick={() => onPatch({ in_target_list: !lead.in_target_list })}
                   aria-pressed={lead.in_target_list}
-                  className={`rounded-full border px-3 py-0.5 text-xs font-medium transition-colors ${
+                  className={`border px-3 py-0.5 text-xs font-medium transition-colors ${
                     lead.in_target_list
-                      ? "border-amber-900 bg-amber-950 text-amber-300 hover:border-amber-700"
+                      ? "border-brand bg-brand text-white hover:bg-brand-hover"
                       : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500 hover:text-white"
                   }`}
                 >
@@ -1002,7 +1002,7 @@ function LeadDrawer({
                   onBlur={saveNotes}
                   rows={4}
                   placeholder="Context, conversation history, next steps…"
-                  className="w-full resize-y rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-600"
+                  className="w-full resize-y border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-600"
                 />
                 <p className="mt-1 text-[0.7rem] text-zinc-600">Saves when you click outside the box.</p>
               </div>
@@ -1042,13 +1042,13 @@ function LeadDrawer({
         <div className="flex items-center justify-between border-t border-zinc-800 px-5 py-3">
           <button
             onClick={onDelete}
-            className="rounded-full border border-red-900 bg-red-950/60 px-3 py-1 text-xs font-medium text-red-300 hover:border-red-700"
+            className="border border-red-900 bg-red-950/60 px-3 py-1 text-xs font-medium text-red-300 hover:border-red-700"
           >
             Delete lead
           </button>
           <button
             onClick={onClose}
-            className="rounded-full border border-zinc-700 bg-zinc-900 px-4 py-1 text-xs font-medium text-zinc-300 hover:border-zinc-500 hover:text-white"
+            className="border border-zinc-700 bg-zinc-900 px-4 py-1 text-xs font-medium text-zinc-300 hover:border-zinc-500 hover:text-white"
           >
             Close
           </button>
@@ -1060,7 +1060,7 @@ function LeadDrawer({
 
 function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+    <section className="border border-zinc-800 bg-zinc-900/40 p-4">
       <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-500">{title}</h3>
       {children}
     </section>
@@ -1069,7 +1069,7 @@ function DrawerSection({ title, children }: { title: string; children: React.Rea
 
 function DrawerStat({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 py-2" title={title}>
+    <div className="border border-zinc-800 bg-zinc-900/40 px-3 py-2" title={title}>
       <p className="text-[0.65rem] font-medium uppercase tracking-wide text-zinc-500">{label}</p>
       <p className="mt-0.5 text-lg font-semibold tabular-nums">{value}</p>
     </div>
@@ -1078,7 +1078,7 @@ function DrawerStat({ label, value, title }: { label: string; value: string; tit
 
 function StatTile({ label, value, hint }: { label: string; value: number; hint: string }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <div className="border border-zinc-800 bg-zinc-900/60 p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>
       <p className="mt-2 text-3xl font-semibold tabular-nums text-zinc-100">{value.toLocaleString()}</p>
       <p className="mt-1 text-xs text-zinc-500">{hint}</p>
@@ -1110,7 +1110,7 @@ function BulkButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
+      className={`border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-40 ${
         danger
           ? "border-red-900 bg-red-950/60 text-red-300 hover:border-red-700"
           : "border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500 hover:text-white"
@@ -1123,18 +1123,18 @@ function BulkButton({
 
 function SetupNotice() {
   return (
-    <div className="mb-6 rounded-xl border border-amber-900/70 bg-amber-950/30 p-5 text-sm text-amber-100">
+    <div className="mb-6 border border-zinc-700 bg-zinc-900 p-5 text-sm text-zinc-300">
       <h2 className="font-semibold">Connect Supabase to start saving ICP leads</h2>
-      <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-amber-200/80">
+      <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-zinc-300">
         <li>
-          Create a Supabase project and run <code className="rounded bg-zinc-900 px-1">supabase/schema.sql</code> in
+          Create a Supabase project and run <code className="bg-zinc-900 px-1">supabase/schema.sql</code> in
           its SQL editor.
         </li>
         <li>
-          Add <code className="rounded bg-zinc-900 px-1">SUPABASE_URL</code> and{" "}
-          <code className="rounded bg-zinc-900 px-1">SUPABASE_SERVICE_ROLE_KEY</code> to{" "}
-          <code className="rounded bg-zinc-900 px-1">.env.local</code> (optionally{" "}
-          <code className="rounded bg-zinc-900 px-1">ICP_MIN_SCORE</code>, default 50).
+          Add <code className="bg-zinc-900 px-1">SUPABASE_URL</code> and{" "}
+          <code className="bg-zinc-900 px-1">SUPABASE_SERVICE_ROLE_KEY</code> to{" "}
+          <code className="bg-zinc-900 px-1">.env.local</code> (optionally{" "}
+          <code className="bg-zinc-900 px-1">ICP_MIN_SCORE</code>, default 50).
         </li>
         <li>Restart the dev server. Every scrape will then save qualifying ICP profiles here.</li>
       </ol>

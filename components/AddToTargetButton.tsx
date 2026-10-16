@@ -37,9 +37,9 @@ export function AddToTargetButton({ user, source }: { user: TwitterUser; source?
       onClick={handleClick}
       disabled={state === "saving" || state === "saved"}
       title={error ?? (state === "saved" ? "In your target list" : "Add to target list")}
-      className={`rounded-full border px-2.5 py-1 text-[0.7rem] font-medium whitespace-nowrap transition-colors disabled:cursor-default ${
+      className={`border px-2.5 py-1 text-[0.7rem] font-medium whitespace-nowrap transition-colors disabled:cursor-default ${
         state === "saved"
-          ? "border-emerald-800 bg-emerald-950 text-emerald-300"
+          ? "border-brand bg-brand text-white"
           : state === "error"
             ? "border-red-900 bg-red-950 text-red-300 hover:border-red-700"
             : "border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500 hover:text-white"
